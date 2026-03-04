@@ -91,11 +91,18 @@ function acquireExternalTool() {
             elif [[ "$download_basename" == *.tar.gz ]]; then
                 # Extract the tar gz.
                 echo "Testing tar gz"
-                tar xzf "$download_target" -C "$download_dir" > /dev/null || checkRC 'tar'
+                # Extract to a temp dir first in case the target filesystem
+                # doesn't support symlinks (e.g. VirtioFS/fakeowner on macOS).
+                local tmp_precache_dir
+                tmp_precache_dir=$(mktemp -d)
+                tar xzf "$download_target" -C "$tmp_precache_dir" > /dev/null || { rm -rf "$tmp_precache_dir"; checkRC 'tar'; }
+                cp -aL "$tmp_precache_dir/." "$download_dir/" > /dev/null || { rm -rf "$tmp_precache_dir"; checkRC 'cp'; }
+                rm -rf "$tmp_precache_dir"
             fi
         fi
     else
         # Extract to layout.
+        rm -rf "$target_dir" || checkRC 'rm'
         mkdir -p "$target_dir" || checkRC 'mkdir'
         local nested_dir=""
         if [[ "$download_basename" == *.zip ]]; then
@@ -114,7 +121,13 @@ function acquireExternalTool() {
         elif [[ "$download_basename" == *.tar.gz ]]; then
             # Extract the tar gz.
             echo "Extracting tar gz to layout"
-            tar xzf "$download_target" -C "$target_dir" > /dev/null || checkRC 'tar'
+            # Extract to a temp dir first in case the target filesystem
+            # doesn't support symlinks (e.g. VirtioFS/fakeowner on macOS).
+            local tmp_layout_dir
+            tmp_layout_dir=$(mktemp -d)
+            tar xzf "$download_target" -C "$tmp_layout_dir" > /dev/null || { rm -rf "$tmp_layout_dir"; checkRC 'tar'; }
+            cp -aL "$tmp_layout_dir/." "$target_dir/" > /dev/null || { rm -rf "$tmp_layout_dir"; checkRC 'cp'; }
+            rm -rf "$tmp_layout_dir"
 
             # Capture the nested directory path if the fix_nested_dir flag is set.
             if [[ "$fix_nested_dir" == "fix_nested_dir" ]]; then
