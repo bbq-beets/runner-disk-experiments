@@ -184,7 +184,19 @@ namespace GitHub.Runner.Worker
                         context,
                         message.Workspace);
 
-                    // TODO run FUSE driver to mount work directory to blob storage
+                    const bool mountWorkDirectory = true; // TODO only if there's actually a "mount" on the job
+                    if (mountWorkDirectory)
+                    {
+                        context.Output("Mounting workflow directory to blob store");
+                        if (Constants.Runner.Platform != Constants.OSPlatform.Linux)
+                        {
+                            context.Error("Mounting drive only supported on Linux runners.");
+                        }
+                        else
+                        {
+                            // TODO run FUSE driver
+                        }
+                    }
 
                     // Set the directory variables
                     context.Debug("Update context data");
