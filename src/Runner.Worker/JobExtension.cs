@@ -965,14 +965,19 @@ namespace GitHub.Runner.Worker
             return snapshot;
         }
 
-        private async Task MountWithFuseAsync(IExecutionContext context, string mountPath)
+        private async Task MountWithFuseAsync(IExecutionContext context, string fuseMountLocation)
         {
+            if (!File.Exists(Constants.FuseMount.DriverPath))
+            {
+                throw new FileNotFoundException($"FUSE driver not found at '{Constants.FuseMount.DriverPath}'.");
+            }
+
             var fuseArgs = string.Join(" ",
                 "start",
                 "--layers-file", Constants.FuseMount.LayersPath,
                 "--file-cache-path", Constants.FuseMount.CacheFile,
                 "--writable-file-path", Constants.FuseMount.WritableFile,
-                "--fuse-mount-directory", mountPath,
+                "--fuse-mount-directory", fuseMountLocation,
                 "--log-base", "storage-v2-mount",
                 "--log-location", Constants.FuseMount.BaseCacheDir);
 
