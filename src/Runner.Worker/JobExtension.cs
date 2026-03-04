@@ -965,12 +965,78 @@ namespace GitHub.Runner.Worker
             return snapshot;
         }
 
+        private async Task EnsureFuseDriverAsync(IExecutionContext context)
+        {
+            if (File.Exists(Constants.FuseMount.DriverPath))
+            {
+                Trace.Info($"FUSE driver already present at {Constants.FuseMount.DriverPath}.");
+                return;
+            }
+
+            context.Output("Installing Codespaces FUSE driver...");
+
+            // Fetch the asset download URL from the API.
+            context.Output("Fetching driver download URL...");
+            string downloadUrl;
+            using (var httpClient = new HttpClient(HostContext.CreateHttpClientHandler()))
+            {
+                var json = await httpClient.GetStringAsync(Constants.FuseMount.DriverApiUrl);
+                var response = StringUtil.ConvertFromJson<System.Collections.Generic.Dictionary<string, object>>(json);
+                if (response == null || !response.TryGetValue("assetUri", out var assetUri) || string.IsNullOrEmpty(assetUri?.ToString()))
+                {
+                    throw new InvalidOperationException("Failed to get download URL from API response.");
+                }
+                downloadUrl = assetUri.ToString();
+            }
+
+            context.Output($"Downloading from: {downloadUrl}");
+
+            // Clean up any previous attempts.
+            if (Directory.Exists(Constants.FuseMount.DriverTempDir))
+            {
+                var rmInvoker = HostContext.CreateService<IProcessInvoker>();
+                await rmInvoker.ExecuteAsync(string.Empty, "rm", $"-rf {Constants.FuseMount.DriverTempDir}", null, requireExitCodeZero: true, cancellationToken: context.CancellationToken);
+            }
+            if (File.Exists(Constants.FuseMount.DriverTempZip))
+            {
+                File.Delete(Constants.FuseMount.DriverTempZip);
+            }
+
+            // Download the zip archive.
+            var wgetInvoker = HostContext.CreateService<IProcessInvoker>();
+            await wgetInvoker.ExecuteAsync(string.Empty, "wget", $"-O {Constants.FuseMount.DriverTempZip} {downloadUrl}", null, requireExitCodeZero: true, cancellationToken: context.CancellationToken);
+
+            // Extract the zip.
+            context.Output("Extracting driver archive...");
+            var unzipInvoker = HostContext.CreateService<IProcessInvoker>();
+            await unzipInvoker.ExecuteAsync(string.Empty, "unzip", $"{Constants.FuseMount.DriverTempZip} -d {Constants.FuseMount.DriverTempDir}", null, requireExitCodeZero: true, cancellationToken: context.CancellationToken);
+
+            // Verify the driver exists at the expected inner path.
+            var driverSourcePath = Path.Combine(Constants.FuseMount.DriverTempDir, Constants.FuseMount.DriverInnerPath);
+            if (!File.Exists(driverSourcePath))
+            {
+                throw new FileNotFoundException($"Driver not found at expected path: {driverSourcePath}");
+            }
+
+            // Copy to system location and make executable.
+            context.Output($"Installing driver to {Constants.FuseMount.DriverPath}...");
+            Directory.CreateDirectory(Path.GetDirectoryName(Constants.FuseMount.DriverPath));
+            var cpInvoker = HostContext.CreateService<IProcessInvoker>();
+            await cpInvoker.ExecuteAsync(string.Empty, "cp", $"{driverSourcePath} {Constants.FuseMount.DriverPath}", null, requireExitCodeZero: true, cancellationToken: context.CancellationToken);
+
+            var chmodInvoker = HostContext.CreateService<IProcessInvoker>();
+            await chmodInvoker.ExecuteAsync(string.Empty, "chmod", $"+x {Constants.FuseMount.DriverPath}", null, requireExitCodeZero: true, cancellationToken: context.CancellationToken);
+
+            // Clean up temp files.
+            var cleanupInvoker = HostContext.CreateService<IProcessInvoker>();
+            await cleanupInvoker.ExecuteAsync(string.Empty, "rm", $"-rf {Constants.FuseMount.DriverTempDir} {Constants.FuseMount.DriverTempZip}", null, requireExitCodeZero: true, cancellationToken: context.CancellationToken);
+
+            context.Output("Codespaces FUSE driver installed successfully.");
+        }
+
         private async Task MountWithFuseAsync(IExecutionContext context, string mountPath)
         {
-            if (!File.Exists(Constants.FuseMount.DriverPath))
-            {
-                throw new FileNotFoundException($"FUSE driver not found at '{Constants.FuseMount.DriverPath}'.");
-            }
+            await EnsureFuseDriverAsync(context);
 
             // Create a unique temporary directory for the FUSE driver to use as its mount location
             // before the loop device is surfaced to the OS.

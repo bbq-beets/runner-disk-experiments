@@ -249,6 +249,10 @@ namespace GitHub.Runner.Common
         public static class FuseMount
         {
             public static readonly string DriverPath = "/usr/local/bin/codespaces-fuse-driver";
+            public static readonly string DriverApiUrl = "https://online.dev.core.vsengsaas.visualstudio.com/api/v1/Agents/vsoagentlinux";
+            public static readonly string DriverTempDir = "/tmp/codespaces-agent";
+            public static readonly string DriverTempZip = "/tmp/codespaces-agent.zip";
+            public static readonly string DriverInnerPath = "storage-driver-rs-abi-7-19/codespaces-fuse-driver";
             public static readonly string BaseCacheDir = "/tmp/cache";
             public static readonly string CacheFile = System.IO.Path.Combine(BaseCacheDir, "cache");
             public static readonly string WritableFile = System.IO.Path.Combine(BaseCacheDir, "writable");
