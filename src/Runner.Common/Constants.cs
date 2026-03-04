@@ -250,9 +250,9 @@ namespace GitHub.Runner.Common
         {
             public static readonly string DriverPath = "/usr/local/bin/codespaces-fuse-driver";
             public static readonly string BaseCacheDir = "/cache";
-            public static readonly string CacheFile = "/cache/cache";
-            public static readonly string WritableFile = "/cache/writable";
-            public static readonly string LayersPath = "/cache/layers.json";
+            public static readonly string CacheFile = System.IO.Path.Combine(BaseCacheDir, "cache");
+            public static readonly string WritableFile = System.IO.Path.Combine(BaseCacheDir, "writable");
+            public static readonly string LayersPath = System.IO.Path.Combine(BaseCacheDir, "layers.json");
             public static readonly int FuseDriverReadyTimeoutMs = 30000;
             public static readonly int FuseDriverPollIntervalMs = 200;
         }
