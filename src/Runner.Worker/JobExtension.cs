@@ -184,20 +184,6 @@ namespace GitHub.Runner.Worker
                         context,
                         message.Workspace);
 
-                    const bool mountWorkDirectory = true; // TODO only if there's actually a "mount" on the job
-                    if (mountWorkDirectory)
-                    {
-                        context.Output("Mounting workflow directory to blob store");
-                        if (Constants.Runner.Platform != Constants.OSPlatform.Linux)
-                        {
-                            context.Error("Mounting drive only supported on Linux runners.");
-                        }
-                        else
-                        {
-                            // TODO run FUSE driver
-                        }
-                    }
-
                     // Set the directory variables
                     context.Debug("Update context data");
                     string _workDirectory = HostContext.GetDirectory(WellKnownDirectory.Work);
@@ -210,6 +196,21 @@ namespace GitHub.Runner.Worker
                         context.SetGitHubContext("host-workspace", githubWorkspace);
                     }
                     context.SetGitHubContext("workspace", githubWorkspace);
+
+                    // Run FUSE driver to mount blob store
+                    const bool mountWorkDirectory = true; // TODO only if there's actually a "mount" on the job
+                    if (mountWorkDirectory)
+                    {
+                        if (Constants.Runner.Platform != Constants.OSPlatform.Linux)
+                        {
+                            context.Error("Mounting drive only supported on Linux runners.");
+                        }
+                        else
+                        {
+                            context.Output($"Mounting workflow directory {githubWorkspace} to blob store");
+                            // TODO run FUSE driver
+                        }
+                    }
 
                     // Temporary hack for GHES alpha
                     var configurationStore = HostContext.GetService<IConfigurationStore>();
