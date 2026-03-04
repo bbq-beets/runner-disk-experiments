@@ -967,17 +967,12 @@ namespace GitHub.Runner.Worker
 
         private async Task MountWithFuseAsync(IExecutionContext context, string mountPath)
         {
-            // Create a unique temporary directory for the FUSE driver to use as its mount location
-            // before the loop device is surfaced to the OS.
-            var fuseMountLocation = Path.Combine(Constants.FuseMount.BaseCacheDir, Guid.NewGuid().ToString("N"));
-            Directory.CreateDirectory(fuseMountLocation);
-
             var fuseArgs = string.Join(" ",
                 "start",
                 "--layers-file", Constants.FuseMount.LayersPath,
                 "--file-cache-path", Constants.FuseMount.CacheFile,
                 "--writable-file-path", Constants.FuseMount.WritableFile,
-                "--fuse-mount-directory", fuseMountLocation,
+                "--fuse-mount-directory", mountPath,
                 "--log-base", "storage-v2-mount",
                 "--log-location", Constants.FuseMount.BaseCacheDir);
 
