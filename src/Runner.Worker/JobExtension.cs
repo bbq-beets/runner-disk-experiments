@@ -967,6 +967,11 @@ namespace GitHub.Runner.Worker
 
         private async Task MountWithFuseAsync(IExecutionContext context, string mountPath)
         {
+            if (!File.Exists(Constants.FuseMount.DriverPath))
+            {
+                throw new FileNotFoundException($"FUSE driver not found at '{Constants.FuseMount.DriverPath}'.");
+            }
+
             // Create a unique temporary directory for the FUSE driver to use as its mount location
             // before the loop device is surfaced to the OS.
             var fuseMountLocation = Path.Combine(Constants.FuseMount.BaseCacheDir, Guid.NewGuid().ToString("N"));
