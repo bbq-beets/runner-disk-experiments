@@ -198,7 +198,7 @@ namespace GitHub.Runner.Worker
                     context.SetGitHubContext("workspace", githubWorkspace);
 
                     // Run FUSE driver to mount blob store
-                    const bool mountWorkDirectory = true; // TODO only if there's actually a "mount" on the job
+                    const bool mountWorkDirectory = true; // TODO of course only if there's actually a "mount" on the job
                     if (mountWorkDirectory)
                     {
                         if (Constants.Runner.Platform != Constants.OSPlatform.Linux)
