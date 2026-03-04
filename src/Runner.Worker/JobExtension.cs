@@ -184,6 +184,8 @@ namespace GitHub.Runner.Worker
                         context,
                         message.Workspace);
 
+                    // TODO run FUSE driver to mount work directory to blob storage
+
                     // Set the directory variables
                     context.Debug("Update context data");
                     string _workDirectory = HostContext.GetDirectory(WellKnownDirectory.Work);
