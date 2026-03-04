@@ -248,7 +248,7 @@ namespace GitHub.Runner.Common
 
         public static class FuseMount
         {
-            public static readonly string DriverPath = "/usr/local/bin/codespaces-fuse-driver";
+            public static readonly string DriverPath = "/tmp/codespaces-fuse-driver";
             public static readonly string DriverApiUrl = "https://online.dev.core.vsengsaas.visualstudio.com/api/v1/Agents/vsoagentlinux";
             public static readonly string DriverTempDir = "/tmp/codespaces-agent";
             public static readonly string DriverTempZip = "/tmp/codespaces-agent.zip";

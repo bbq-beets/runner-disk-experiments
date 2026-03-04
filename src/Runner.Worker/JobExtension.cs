@@ -1020,12 +1020,13 @@ namespace GitHub.Runner.Worker
 
             // Copy to system location and make executable.
             context.Output($"Installing driver to {Constants.FuseMount.DriverPath}...");
-            Directory.CreateDirectory(Path.GetDirectoryName(Constants.FuseMount.DriverPath));
-            var cpInvoker = HostContext.CreateService<IProcessInvoker>();
-            await cpInvoker.ExecuteAsync(string.Empty, "cp", $"{driverSourcePath} {Constants.FuseMount.DriverPath}", null, requireExitCodeZero: true, cancellationToken: context.CancellationToken);
-
-            var chmodInvoker = HostContext.CreateService<IProcessInvoker>();
-            await chmodInvoker.ExecuteAsync(string.Empty, "chmod", $"+x {Constants.FuseMount.DriverPath}", null, requireExitCodeZero: true, cancellationToken: context.CancellationToken);
+            File.Copy(driverSourcePath, Constants.FuseMount.DriverPath, overwrite: true);
+#pragma warning disable CA1416 // mounting is only ever reached on Linux
+            File.SetUnixFileMode(Constants.FuseMount.DriverPath,
+                UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute |
+                UnixFileMode.GroupRead | UnixFileMode.GroupExecute |
+                UnixFileMode.OtherRead | UnixFileMode.OtherExecute);
+#pragma warning restore CA1416
 
             // Clean up temp files.
             var cleanupInvoker = HostContext.CreateService<IProcessInvoker>();
