@@ -208,7 +208,7 @@ namespace GitHub.Runner.Worker
                         else
                         {
                             context.Output($"Mounting workflow directory {githubWorkspace} to blob store");
-                            // TODO run FUSE driver
+                            await MountWithFuseAsync(context, githubWorkspace);
                         }
                     }
 
@@ -963,6 +963,121 @@ namespace GitHub.Runner.Worker
 
             Trace.Info($"Total accessible running process: {snapshot.Count}.");
             return snapshot;
+        }
+
+        private async Task MountWithFuseAsync(IExecutionContext context, string mountPath)
+        {
+            // Create a unique temporary directory for the FUSE driver to use as its mount location
+            // before the loop device is surfaced to the OS.
+            var fuseMountLocation = Path.Combine(Constants.FuseMount.BaseCacheDir, Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(fuseMountLocation);
+
+            var fuseArgs = string.Join(" ",
+                "start",
+                "--layers-file", Constants.FuseMount.LayersPath,
+                "--file-cache-path", Constants.FuseMount.CacheFile,
+                "--writable-file-path", Constants.FuseMount.WritableFile,
+                "--fuse-mount-directory", fuseMountLocation,
+                "--log-base", "storage-v2-mount",
+                "--log-location", Constants.FuseMount.BaseCacheDir);
+
+            // Start the FUSE driver as a detached background process.
+            var fuseStartInfo = new System.Diagnostics.ProcessStartInfo
+            {
+                FileName = "sudo",
+                Arguments = $"{Constants.FuseMount.DriverPath} {fuseArgs}",
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                RedirectStandardOutput = false,
+                RedirectStandardError = false,
+            };
+
+            var fuseProcess = System.Diagnostics.Process.Start(fuseStartInfo)
+                ?? throw new InvalidOperationException("Failed to start FUSE driver process.");
+            fuseProcess.Dispose(); // detached — we do not own its lifetime
+
+            // Poll losetup until the FUSE driver surfaces a loop device backed by fuseMountLocation.
+            Trace.Info($"Waiting for FUSE driver to be ready at {fuseMountLocation}");
+            string deviceName = null;
+            using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(Constants.FuseMount.FuseDriverReadyTimeoutMs));
+            while (!cts.Token.IsCancellationRequested)
+            {
+                deviceName = await GetFuseDeviceNameAsync(fuseMountLocation);
+                if (deviceName != null)
+                {
+                    break;
+                }
+                await Task.Delay(Constants.FuseMount.FuseDriverPollIntervalMs, cts.Token).ContinueWith(_ => { });
+            }
+
+            if (string.IsNullOrEmpty(deviceName))
+            {
+                throw new TimeoutException($"Timed out waiting for FUSE driver to expose a loop device for {fuseMountLocation}.");
+            }
+
+            Trace.Info($"FUSE driver ready. Loop device: {deviceName}");
+
+            // Ensure the target mount directory exists, then mount.
+            var mkdirInvoker = HostContext.CreateService<IProcessInvoker>();
+            await mkdirInvoker.ExecuteAsync(
+                workingDirectory: string.Empty,
+                fileName: "sudo",
+                arguments: $"mkdir -p {mountPath}",
+                environment: null,
+                requireExitCodeZero: true,
+                cancellationToken: context.CancellationToken);
+
+            var mountInvoker = HostContext.CreateService<IProcessInvoker>();
+            await mountInvoker.ExecuteAsync(
+                workingDirectory: string.Empty,
+                fileName: "sudo",
+                arguments: $"mount {deviceName} {mountPath}",
+                environment: null,
+                requireExitCodeZero: true,
+                cancellationToken: context.CancellationToken);
+
+            context.Output($"Workflow directory {mountPath} mounted from loop device {deviceName}");
+        }
+
+        private async Task<string> GetFuseDeviceNameAsync(string fuseMountLocation)
+        {
+            try
+            {
+                var output = new System.Text.StringBuilder();
+                var invoker = HostContext.CreateService<IProcessInvoker>();
+                invoker.OutputDataReceived += (_, e) =>
+                {
+                    if (!string.IsNullOrEmpty(e.Data))
+                    {
+                        output.AppendLine(e.Data);
+                    }
+                };
+                await invoker.ExecuteAsync(
+                    workingDirectory: string.Empty,
+                    fileName: "losetup",
+                    arguments: "--output NAME,BACK-FILE",
+                    environment: null,
+                    requireExitCodeZero: false,
+                    cancellationToken: CancellationToken.None);
+
+                foreach (var line in output.ToString().Split('\n', StringSplitOptions.RemoveEmptyEntries))
+                {
+                    if (line.Contains(fuseMountLocation))
+                    {
+                        // Format: "/dev/loop0   /path/to/back-file"
+                        var parts = line.Trim().Split((char[])null, 2, StringSplitOptions.RemoveEmptyEntries);
+                        if (parts.Length >= 1)
+                        {
+                            return parts[0];
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Trace.Warning($"GetFuseDeviceName: exception - {ex.Message}");
+            }
+            return null;
         }
 
         private static void ValidateJobContainer(JobContainer container)
