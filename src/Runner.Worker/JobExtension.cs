@@ -50,6 +50,9 @@ namespace GitHub.Runner.Worker
         private Task _diskSpaceCheckTask = null;
         private CancellationTokenSource _serviceConnectivityCheckToken = new();
         private Task _serviceConnectivityCheckTask = null;
+        private int _fusePid = -1;
+        private string _fuseMountPath;
+        private string _fuseMountLocation;
 
         // Download all required actions.
         // Make sure all condition inputs are valid.
@@ -551,6 +554,24 @@ namespace GitHub.Runner.Worker
                     context.Start();
                     context.Debug("Starting: Complete job");
 
+                    // Unmount FUSE drive and stop driver if we started one.
+                    if (_fusePid > 0)
+                    {
+                        context.Output($"Unmounting workflow directory {_fuseMountPath}");
+                        var umountInvoker = HostContext.CreateService<IProcessInvoker>();
+                        await umountInvoker.ExecuteAsync(string.Empty, "sudo", $"umount {_fuseMountPath}", null, requireExitCodeZero: false, cancellationToken: CancellationToken.None);
+
+                        context.Output($"Stopping FUSE driver (pid {_fusePid})");
+                        var killInvoker = HostContext.CreateService<IProcessInvoker>();
+                        await killInvoker.ExecuteAsync(string.Empty, "sudo", $"kill {_fusePid}", null, requireExitCodeZero: false, cancellationToken: CancellationToken.None);
+
+                        if (!string.IsNullOrEmpty(_fuseMountLocation) && Directory.Exists(_fuseMountLocation))
+                        {
+                            var rmInvoker = HostContext.CreateService<IProcessInvoker>();
+                            await rmInvoker.ExecuteAsync(string.Empty, "rm", $"-rf {_fuseMountLocation}", null, requireExitCodeZero: false, cancellationToken: CancellationToken.None);
+                        }
+                    }
+
                     Trace.Info("Initialize Env context");
 
 #if OS_WINDOWS
@@ -969,7 +990,7 @@ namespace GitHub.Runner.Worker
         {
             if (File.Exists(Constants.FuseMount.DriverPath))
             {
-                Trace.Info($"FUSE driver already present at {Constants.FuseMount.DriverPath}.");
+                context.Output($"FUSE driver already present at {Constants.FuseMount.DriverPath}.");
                 return;
             }
 
@@ -1066,7 +1087,10 @@ namespace GitHub.Runner.Worker
 
             var fuseProcess = System.Diagnostics.Process.Start(fuseStartInfo)
                 ?? throw new InvalidOperationException("Failed to start FUSE driver process.");
-            fuseProcess.Dispose(); // detached — we do not own its lifetime
+            _fusePid = fuseProcess.Id;
+            _fuseMountPath = mountPath;
+            _fuseMountLocation = fuseMountLocation;
+            fuseProcess.Dispose(); // release .NET handle; we track only the PID
 
             // Poll losetup until the FUSE driver surfaces a loop device backed by fuseMountLocation.
             Trace.Info($"Waiting for FUSE driver to be ready at {fuseMountLocation}");
